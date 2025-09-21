@@ -54,9 +54,6 @@ jobs:
             gallery = []
 
             for i, img in enumerate(images):
-              # img can be either:
-              # - a dict { "nombre": "...", "contenido": "<base64>" }
-              # - or a string "images/name.jpg" or "name.jpg" or a URL (http...)
               if isinstance(img, dict):
                 nombre = img.get("nombre") or img.get("name") or f"{slug}-{i+1}.jpg"
                 b64 = img.get("contenido") or img.get("content")
@@ -71,19 +68,23 @@ jobs:
                 except Exception as e:
                   print("Failed to write image", nombre, e)
               elif isinstance(img, str):
-                # if it's an URL, keep it; if it's a filename, keep filename
                 gallery.append(img)
               else:
-                # skip unknown types
                 continue
 
-            # Build YAML frontmatter (safe)
+            # --- INICIO DE LA CORRECCIÓN ---
+            # 1. Escapamos las comillas dobles en el título en una variable separada.
+            escaped_title = title.replace('"', '\\"')
+            
+            # 2. Construimos el frontmatter de forma más limpia.
             fm_lines = [
               '---',
-              f'title: "{title.replace(\'"\', "\\\\"")}"',
+              f'title: "{escaped_title}"',
               f'date: "{date}"',
               'gallery:'
             ]
+            # --- FIN DE LA CORRECCIÓN ---
+            
             for g in gallery:
               fm_lines.append(f'  - "{g}"')
             fm_lines.append('---')
@@ -92,7 +93,6 @@ jobs:
             with open(md_path, "w", encoding="utf-8") as md_f:
               md_f.write("\n".join(fm_lines) + "\n\n" + markdown)
 
-            # remove processed draft
             os.remove(path)
 
           PY
