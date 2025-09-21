@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Editor - Noticias ONG</title>
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+  <style>
+    body{font-family:Arial;max-width:900px;margin:20px auto;padding:20px;background:#f7f7f7;border-radius:10px}
+    input,button{width:100%;padding:10px;margin-bottom:12px}
+    .gallery-preview img{max-height:80px;margin:4px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <h1>✏️ Editor de Noticias</h1>
+
+  <label>Título</label>
+  <input id="titulo" />
+
+  <label>Fecha</label>
+  <input id="fecha" type="date" />
+
+  <label>Portada & Galería (sube varias, la primera será portada)</label>
+  <input id="files" type="file" accept="image/*" multiple />
+  <div id="preview" class="gallery-preview"></div>
+
+  <label>Contenido</label>
+  <div id="editor"></div>
+
+  <button id="btnSave">Guardar (genera borrador)</button>
+
+  <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+  <script>
+    // ========== CONFIG (cambiar con tus datos) ==========
+    const OWNER = "TU_OWNER";  // <--- Reemplaza por tu usuario/organización de GitHub
+    const REPO = "TU_REPO";  // <--- Reemplaza por el nombre de tu repositorio
+    const BRANCH = "main";
+    // ====================================================
+
+    const editor = new toastui.Editor({
+      el: document.querySelector('#editor'),
+      height: '320px',
+      initialEditType: 'wysiwyg',
+      previewStyle: 'vertical'
+    });
+
+    const filesInput = document.getElementById('files');
+    const preview = document.getElementById('preview');
+    let fileList = [];
+
+    filesInput.addEventListener('change', async (e) => {
+      preview.innerHTML = '';
+      fileList = Array.from(e.target.files);
+      for (const f of fileList) {
+        const url = URL.createObjectURL(f);
+        const img = document.createElement('img'); img.src = url;
+        preview.appendChild(img);
+      }
+    });
+
+    async function fileToBase64(file) {
+      return new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => {
+          const dataUrl = r.result;
+          const base64 = dataUrl.split(',')[1];
+          res(base64);
+        };
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+    }
+
+    const params = new URLSearchParams(location.search);
+    const slug = params.get('slug');
+
+    (async function preload() {
+      if (!slug) return;
+      try {
+        const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/noticias/${slug}.md`;
+        const resp = await fetch(rawUrl);
+        if (!resp.ok) throw new Error("No se encontró el archivo Markdown.");
+        const raw = await resp.text();
+        const match = /^---([\s\S]*?)---/.exec(raw);
+        let md = raw;
+        if (match) {
+          const yaml = match[1];
+          md = raw.replace(match[0], '').trim();
+          const title = /title:\s*"(.*?)"/.exec(yaml)?.[1] || "";
+          const date = /date:\s*"(.*?)"/.exec(yaml)?.[1] || "";
+          document.getElementById('titulo').value = title;
+          document.getElementById('fecha').value = date;
+        }
+        editor.setMarkdown(md);
+        document.getElementById('btnSave').innerText = "Actualizar borrador";
+      } catch (e) {
+        console.warn(e);
+        alert("Error al cargar la noticia para editar. Creando una nueva en su lugar.");
+        history.replaceState({}, '', location.pathname);
+      }
+    })();
+
+    document.getElementById('btnSave').addEventListener('click', async () => {
+      const title = document.getElementById('titulo').value.trim();
+      if (!title) { alert('Pon un título'); return; }
+      const date = document.getElementById('fecha').value || new Date().toISOString().split('T')[0];
+      const markdown = editor.getMarkdown();
+      const slugFinal = slug || title.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+
+      const draft = { title, date, slug: slugFinal, markdown, images: [] };
+
+      for (const f of fileList) {
+        const b64 = await fileToBase64(f);
+        draft.images.push({ nombre: f.name, contenido: b64 });
+      }
+
+      const jsonString = JSON.stringify(draft, null, 2);
+      
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${slugFinal}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      alert("Archivo `drafts/" + slugFinal + ".json` generado. Cópialo a tu repositorio local y haz `git push` para procesar la noticia.");
+    });
+  </script>
+</body>
+</html>
