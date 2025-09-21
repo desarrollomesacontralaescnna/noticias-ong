@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Editor de Noticias - ONG</title>
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 12px;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin: 10px 0 5px;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    button {
+      background: #0077cc;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #005fa3;
+    }
+  </style>
+</head>
+<body>
+  <h1>📰 Publicar Noticia</h1>
+
+  <label for="titulo">Título</label>
+  <input type="text" id="titulo" placeholder="Escribe el título de la noticia" />
+
+  <label for="fecha">Fecha</label>
+  <input type="date" id="fecha" />
+
+  <label>Contenido</label>
+  <div id="editor"></div>
+
+  <button onclick="publicarNoticia()">📤 Publicar</button>
+
+  <pre id="salida" style="background:#eee;padding:10px;border-radius:6px;white-space:pre-wrap;"></pre>
+
+  <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+  <script>
+    const editor = new toastui.Editor({
+      el: document.querySelector('#editor'),
+      height: '400px',
+      initialEditType: 'wysiwyg',
+      previewStyle: 'vertical'
+    });
+
+    async function publicarNoticia() {
+      const titulo = document.getElementById("titulo").value;
+      const fecha = document.getElementById("fecha").value || new Date().toISOString().split('T')[0];
+      const contenido = editor.getMarkdown();
+      const filename = `${Date.now()}-${titulo.replace(/\s+/g, "-").toLowerCase()}.md`;
+
+      const md = \`---
+titulo: "\${titulo}"
+fecha: "\${fecha}"
+---
+\${contenido}
+\`;
+
+      const repo = "TU_USUARIO/noticias-ong";
+      const path = \`noticias/\${filename}\`;
+
+      await fetch(\`https://api.github.com/repos/\${repo}/contents/\${path}\`, {
+        method: "PUT",
+        headers: {
+          "Authorization": "token TU_TOKEN",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: \`📰 Nueva noticia: \${titulo}\`,
+          content: btoa(unescape(encodeURIComponent(md)))
+        })
+      })
+      .then(r => r.json())
+      .then(data => {
+        alert("Noticia publicada ✅");
+        document.getElementById("salida").textContent = "Archivo generado:\n" + filename + "\n\n" + md;
+      })
+      .catch(err => {
+        alert("Error al publicar ❌");
+        console.error(err);
+      });
+    }
+  </script>
+</body>
+</html>
