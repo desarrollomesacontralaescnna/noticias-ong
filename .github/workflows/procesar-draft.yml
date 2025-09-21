@@ -99,6 +99,12 @@ jobs:
 
       - name: Commit and push changes
         run: |
+          # --- INICIO DE LA CORRECCIÓN ---
+          # Configurar la identidad de Git para el autor del commit
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # --- FIN DE LA CORRECCIÓN ---
+          
           git add noticias images drafts || true
           if git diff --cached --quiet; then
             echo "No changes to commit"
