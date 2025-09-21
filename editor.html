@@ -26,15 +26,17 @@
   <label>Contenido</label>
   <div id="editor"></div>
 
-  <button id="btnSave">Guardar (genera borrador)</button>
+  <button id="btnSave">Guardar (envía draft)</button>
 
   <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
   <script>
-    // ========== CONFIG (cambiar con tus datos) ==========
-    const OWNER = "TU_OWNER";  // <--- Reemplaza por tu usuario/organización de GitHub
-    const REPO = "TU_REPO";  // <--- Reemplaza por el nombre de tu repositorio
+    // ========== CONFIG (solo cambiar WORKER_URL si corresponde) ==========
+    const WORKER_URL = "https://noticias-ong-api.desarrollomesacontralaescnna.workers.dev/create-draft"; // <--- coloca aquí tu Worker URL (recomendado)
+    // opcional: OWNER/REPO si quieres delete/edit directo (no necesario si usas Worker)
+    const OWNER = "desarrollomesacontralaescnna";
+    const REPO = "noticias-ong";
     const BRANCH = "main";
-    // ====================================================
+    // ====================================================================
 
     const editor = new toastui.Editor({
       el: document.querySelector('#editor'),
@@ -70,15 +72,18 @@
       });
     }
 
+    // detect slug for edit
     const params = new URLSearchParams(location.search);
     const slug = params.get('slug');
 
+    // if slug provided: fetch md to preload
     (async function preload() {
       if (!slug) return;
+      // tries to read from raw.githubusercontent
       try {
         const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/noticias/${slug}.md`;
         const resp = await fetch(rawUrl);
-        if (!resp.ok) throw new Error("No se encontró el archivo Markdown.");
+        if (!resp.ok) return;
         const raw = await resp.text();
         const match = /^---([\s\S]*?)---/.exec(raw);
         let md = raw;
@@ -87,15 +92,15 @@
           md = raw.replace(match[0], '').trim();
           const title = /title:\s*"(.*?)"/.exec(yaml)?.[1] || "";
           const date = /date:\s*"(.*?)"/.exec(yaml)?.[1] || "";
+          const galleryMatches = [...yaml.matchAll(/- "(.*?)"/g)].map(m=>m[1]);
           document.getElementById('titulo').value = title;
           document.getElementById('fecha').value = date;
+          // Note: we don't automatically load remote images into fileList (browsers don't allow)
+          // but we could show thumbnails linking to images/<name>
         }
         editor.setMarkdown(md);
-        document.getElementById('btnSave').innerText = "Actualizar borrador";
       } catch (e) {
         console.warn(e);
-        alert("Error al cargar la noticia para editar. Creando una nueva en su lugar.");
-        history.replaceState({}, '', location.pathname);
       }
     })();
 
@@ -106,24 +111,36 @@
       const markdown = editor.getMarkdown();
       const slugFinal = slug || title.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
 
+      // build draft
       const draft = { title, date, slug: slugFinal, markdown, images: [] };
 
+      // attach files as base64
       for (const f of fileList) {
         const b64 = await fileToBase64(f);
         draft.images.push({ nombre: f.name, contenido: b64 });
       }
 
-      const jsonString = JSON.stringify(draft, null, 2);
-      
-      const blob = new Blob([jsonString], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `${slugFinal}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      
-      alert("Archivo `drafts/" + slugFinal + ".json` generado. Cópialo a tu repositorio local y haz `git push` para procesar la noticia.");
+      // send to Worker
+      if (!WORKER_URL || WORKER_URL.includes("REEMPLAZA_POR_TU_WORKER")) {
+        alert("CONFIG ERROR: Pon la URL del Worker en WORKER_URL dentro del archivo.");
+        return;
+      }
+
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft)
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        alert("Error al enviar draft: " + res.status + " " + txt);
+        return;
+      }
+      const j = await res.json();
+      alert("Draft enviado: " + (j.slug || "ok") + ". En breve Actions lo procesará.");
+      // optionally redirect back to index
+      window.location.href = 'index.html';
     });
   </script>
 </body>

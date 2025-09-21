@@ -9,6 +9,7 @@ on:
 jobs:
   procesar:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -22,7 +23,6 @@ jobs:
           python-version: '3.x'
 
       - name: Process drafts into markdown and save images
-        id: process_script
         run: |
           python3 - <<'PY'
           import os, json, base64, datetime, sys
@@ -54,6 +54,9 @@ jobs:
             gallery = []
 
             for i, img in enumerate(images):
+              # img can be either:
+              # - a dict { "nombre": "...", "contenido": "<base64>" }
+              # - or a string "images/name.jpg" or "name.jpg" or a URL (http...)
               if isinstance(img, dict):
                 nombre = img.get("nombre") or img.get("name") or f"{slug}-{i+1}.jpg"
                 b64 = img.get("contenido") or img.get("content")
@@ -68,10 +71,13 @@ jobs:
                 except Exception as e:
                   print("Failed to write image", nombre, e)
               elif isinstance(img, str):
+                # if it's an URL, keep it; if it's a filename, keep filename
                 gallery.append(img)
               else:
+                # skip unknown types
                 continue
 
+            # Build YAML frontmatter (safe)
             fm_lines = [
               '---',
               f'title: "{title.replace(\'"\', "\\\\"")}"',
@@ -86,6 +92,7 @@ jobs:
             with open(md_path, "w", encoding="utf-8") as md_f:
               md_f.write("\n".join(fm_lines) + "\n\n" + markdown)
 
+            # remove processed draft
             os.remove(path)
 
           PY
@@ -96,8 +103,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
             git commit -m "ci: procesar drafts -> noticias"
-            git push
+            git push origin HEAD:main
           fi
