@@ -7,7 +7,10 @@
   <style>
     body{font-family:Arial;max-width:900px;margin:20px auto;padding:20px;background:#f7f7f7;border-radius:10px}
     input,button{width:100%;padding:10px;margin-bottom:12px}
-    .gallery-preview img{max-height:80px;margin:4px;border-radius:6px}
+    /* CAMBIO: Estilos para la galería de imágenes */
+    .gallery-preview .img-container{position:relative;display:inline-block;margin:4px;}
+    .gallery-preview img{max-height:80px;border-radius:6px;display:block;}
+    .gallery-preview .delete-btn{position:absolute;top:-5px;right:-5px;background:red;color:white;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-weight:bold;line-height:20px;text-align:center;}
   </style>
 </head>
 <body>
@@ -19,23 +22,21 @@
   <label>Fecha</label>
   <input id="fecha" type="date" />
 
-  <label>Portada & Galería (sube varias, la primera será portada)</label>
+  <label>Portada & Galería (sube nuevas imágenes aquí)</label>
   <input id="files" type="file" accept="image/*" multiple />
   <div id="preview" class="gallery-preview"></div>
 
   <label>Contenido</label>
   <div id="editor"></div>
 
-  <button id="btnSave">Guardar (envía draft)</button>
+  <button id="btnSave">Guardar Cambios</button>
 
   <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
   <script>
-    // ========== CONFIG (solo cambiar WORKER_URL si corresponde) ==========
-    const WORKER_URL = "https://noticias-ong-api.desarrollomesacontralaescnna.workers.dev/create-draft";    // opcional: OWNER/REPO si quieres delete/edit directo (no necesario si usas Worker)
+    const WORKER_URL = "https://noticias-ong-api.desarrollomesacontralaescnna.workers.dev/create-draft";
     const OWNER = "desarrollomesacontralaescnna";
     const REPO = "noticias-ong";
     const BRANCH = "main";
-    // ====================================================================
 
     const editor = new toastui.Editor({
       el: document.querySelector('#editor'),
@@ -46,39 +47,70 @@
 
     const filesInput = document.getElementById('files');
     const preview = document.getElementById('preview');
-    let fileList = [];
+    let newFilesList = []; // Lista para los archivos NUEVOS que se suben
+    // CAMBIO: Lista para los nombres de las imágenes EXISTENTES que se conservan
+    let existingImages = []; 
 
-    filesInput.addEventListener('change', async (e) => {
-      preview.innerHTML = '';
-      fileList = Array.from(e.target.files);
-      for (const f of fileList) {
-        const url = URL.createObjectURL(f);
-        const img = document.createElement('img'); img.src = url;
-        preview.appendChild(img);
-      }
+    filesInput.addEventListener('change', (e) => {
+      // Al subir nuevos archivos, los añadimos a la lista y a la preview
+      newFilesList = newFilesList.concat(Array.from(e.target.files));
+      renderGallery();
     });
+
+    // CAMBIO: Función centralizada para renderizar la galería
+    function renderGallery() {
+      preview.innerHTML = '';
+      
+      // Renderizar imágenes existentes
+      existingImages.forEach((imgName, index) => {
+        const container = document.createElement('div');
+        container.className = 'img-container';
+        const imgUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/images/${imgName}`;
+        container.innerHTML = `
+          <img src="${imgUrl}" alt="${imgName}">
+          <button class="delete-btn" onclick="removeExistingImage(${index})">&times;</button>
+        `;
+        preview.appendChild(container);
+      });
+
+      // Renderizar imágenes nuevas (recién subidas)
+      newFilesList.forEach((file, index) => {
+        const container = document.createElement('div');
+        container.className = 'img-container';
+        const url = URL.createObjectURL(file);
+        container.innerHTML = `
+          <img src="${url}" alt="${file.name}">
+          <button class="delete-btn" onclick="removeNewImage(${index})">&times;</button>
+        `;
+        preview.appendChild(container);
+      });
+    }
+
+    // CAMBIO: Funciones para eliminar imágenes
+    function removeExistingImage(index) {
+      existingImages.splice(index, 1); // La elimina de la lista de existentes
+      renderGallery();
+    }
+    function removeNewImage(index) {
+      newFilesList.splice(index, 1); // La elimina de la lista de nuevas
+      renderGallery();
+    }
 
     async function fileToBase64(file) {
       return new Promise((res, rej) => {
         const r = new FileReader();
-        r.onload = () => {
-          const dataUrl = r.result;
-          const base64 = dataUrl.split(',')[1];
-          res(base64);
-        };
+        r.onload = () => res(r.result.split(',')[1]);
         r.onerror = rej;
         r.readAsDataURL(file);
       });
     }
 
-    // detect slug for edit
     const params = new URLSearchParams(location.search);
     const slug = params.get('slug');
 
-    // if slug provided: fetch md to preload
     (async function preload() {
       if (!slug) return;
-      // tries to read from raw.githubusercontent
+      document.getElementById('btnSave').textContent = `Guardar Cambios en "${slug}"`;
       try {
         const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/noticias/${slug}.md`;
         const resp = await fetch(rawUrl);
@@ -89,18 +121,15 @@
         if (match) {
           const yaml = match[1];
           md = raw.replace(match[0], '').trim();
-          const title = /title:\s*"(.*?)"/.exec(yaml)?.[1] || "";
-          const date = /date:\s*"(.*?)"/.exec(yaml)?.[1] || "";
-          const galleryMatches = [...yaml.matchAll(/- "(.*?)"/g)].map(m=>m[1]);
-          document.getElementById('titulo').value = title;
-          document.getElementById('fecha').value = date;
-          // Note: we don't automatically load remote images into fileList (browsers don't allow)
-          // but we could show thumbnails linking to images/<name>
+          document.getElementById('titulo').value = /title:\s*"(.*?)"/.exec(yaml)?.[1] || "";
+          document.getElementById('fecha').value = /date:\s*"(.*?)"/.exec(yaml)?.[1] || "";
+          
+          // CAMBIO: Cargar imágenes existentes y renderizar la galería
+          existingImages = [...yaml.matchAll(/- "(.*?)"/g)].map(m => m[1].split('/').pop()); // Tomamos solo el nombre del archivo
+          renderGallery();
         }
         editor.setMarkdown(md);
-      } catch (e) {
-        console.warn(e);
-      }
+      } catch (e) { console.warn(e); }
     })();
 
     document.getElementById('btnSave').addEventListener('click', async () => {
@@ -110,20 +139,16 @@
       const markdown = editor.getMarkdown();
       const slugFinal = slug || title.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
 
-      // build draft
-      const draft = { title, date, slug: slugFinal, markdown, images: [] };
-
-      // attach files as base64
-      for (const f of fileList) {
+      const draft = { title, date, slug: slugFinal, markdown };
+      
+      // CAMBIO: Construir la lista final de imágenes combinando existentes y nuevas
+      const finalImages = [...existingImages]; // Empezamos con las existentes que no se borraron
+      for (const f of newFilesList) {
         const b64 = await fileToBase64(f);
-        draft.images.push({ nombre: f.name, contenido: b64 });
+        // Las nuevas imágenes se envían con su contenido en base64
+        finalImages.push({ nombre: f.name, contenido: b64 });
       }
-
-      // send to Worker
-      if (!WORKER_URL || WORKER_URL.includes("REEMPLAZA_POR_TU_WORKER")) {
-        alert("CONFIG ERROR: Pon la URL del Worker en WORKER_URL dentro del archivo.");
-        return;
-      }
+      draft.images = finalImages;
 
       const res = await fetch(WORKER_URL, {
         method: 'POST',
@@ -138,7 +163,6 @@
       }
       const j = await res.json();
       alert("Draft enviado: " + (j.slug || "ok") + ". En breve Actions lo procesará.");
-      // optionally redirect back to index
       window.location.href = 'index.html';
     });
   </script>

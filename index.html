@@ -5,8 +5,11 @@
   <title>Noticias ONG</title>
   <style>
     body{font-family:Arial;max-width:900px;margin:20px auto;padding:20px;background:#fff}
-    .card{border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:12px}
-    button{padding:8px 12px;border-radius:6px;border:none;background:#0077cc;color:#fff;cursor:pointer}
+    .card{display:flex;gap:20px;border:1px solid #ddd;padding:12px;border-radius:8px;margin-bottom:12px;align-items:center;}
+    .card img{width:100px;height:100px;object-fit:cover;border-radius:6px;}
+    .card-content{flex:1;}
+    .card-content p{color:#555;font-size:0.9em;}
+    button{padding:8px 12px;border-radius:6px;border:none;background:#0077cc;color:#fff;cursor:pointer;margin-right:8px;}
     .danger{background:#d9534f}
   </style>
 </head>
@@ -20,35 +23,105 @@
   const OWNER = "desarrollomesacontralaescnna";
   const REPO = "noticias-ong";
   const BRANCH = "main";
+  // CAMBIO: URL del worker para la función de eliminar
+  const WORKER_URL = "https://noticias-ong-api.desarrollomesacontralaescnna.workers.dev/delete-file";
 
   async function load() {
     const listEl = document.getElementById('list');
     listEl.innerHTML = '<p>Cargando...</p>';
     try {
-      const resp = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/noticias?ref=${BRANCH}`);
+      // CAMBIO: Añadimos un "cache buster" para evitar el problema de caché.
+      // Esto hace que la URL sea única en cada petición, forzando al navegador a descargar los datos frescos.
+      const cacheBuster = '?cache=' + new Date().getTime();
+      const resp = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/noticias${cacheBuster}`, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
+      });
+
       if (!resp.ok) throw new Error('Error al pedir noticias: ' + resp.status);
       const files = await resp.json();
       listEl.innerHTML = '';
-      for (const f of files) {
+      
+      for (const f of files.sort((a,b) => b.name.localeCompare(a.name))) { // Ordenar por nombre descendente
         if (!f.name.endsWith('.md')) continue;
-        const raw = await fetch(f.download_url).then(r=>r.text());
+        
+        // CAMBIO: Usamos el cache buster también para descargar el contenido del archivo.
+        const raw = await fetch(f.download_url + cacheBuster).then(r=>r.text());
         const match = /^---([\s\S]*?)---/.exec(raw);
-        let title = f.name.replace('.md',''), date='';
+        let title = f.name.replace('.md',''), date='', cover_image_url = '', markdown_preview = 'No hay contenido...';
+        
         if (match) {
           const yaml = match[1];
+          const mdContent = raw.replace(match[0], '').trim();
+          
           title = /title:\s*"(.*?)"/.exec(yaml)?.[1] || title;
           date = /date:\s*"(.*?)"/.exec(yaml)?.[1] || '';
+          
+          // CAMBIO: Extraer la primera imagen de la galería como portada
+          const firstImage = /gallery:\s*\n\s*-\s*"(.*?)"/.exec(yaml)?.[1];
+          if (firstImage) {
+            cover_image_url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/images/${firstImage}`;
+          }
+
+          // CAMBIO: Crear un extracto del markdown (30 caracteres)
+          if (mdContent) {
+            markdown_preview = mdContent.substring(0, 50).replace(/(\r\n|\n|\r)/gm, " ") + '...';
+          }
         }
+        
+        const slug = f.name.replace('.md','');
         const card = document.createElement('div');
         card.className = 'card';
-        card.innerHTML = `<h3>${title}</h3><small>${date}</small>
-          <div style="margin-top:8px">
-            <button onclick="location.href='editor.html?slug=${f.name.replace('.md','')}'">✏️ Editar</button>
+        // CAMBIO: Asignamos un ID único a cada tarjeta para poder eliminarla del DOM.
+        card.id = `card-${slug}`;
+        
+        // CAMBIO: Nueva estructura de la tarjeta con imagen y extracto
+        card.innerHTML = `
+          ${cover_image_url ? `<img src="${cover_image_url}" alt="Portada">` : ''}
+          <div class="card-content">
+            <h3>${title}</h3>
+            <small>${date}</small>
+            <p>${markdown_preview}</p>
+            <div style="margin-top:8px">
+              <button onclick="location.href='editor.html?slug=${slug}'">✏️ Editar</button>
+              <button class="danger" onclick="deleteNoticia('${slug}')">🗑️ Eliminar</button>
+            </div>
           </div>`;
         listEl.appendChild(card);
       }
     } catch (e) {
       listEl.innerHTML = '<p>No se pudieron cargar noticias. ' + e.message + '</p>';
+    }
+  }
+
+  // CAMBIO: Nueva función para eliminar noticias
+  async function deleteNoticia(slug) {
+    if (!confirm(`¿Estás seguro de que quieres eliminar la noticia "${slug}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    if (!confirm(`CONFIRMACIÓN FINAL: ¿Realmente quieres eliminar "${slug}" de forma permanente?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: `noticias/${slug}.md`,
+          message: `ci: eliminar noticia ${slug}`
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      
+      alert(`Noticia "${slug}" eliminada con éxito.`);
+      // Eliminar la tarjeta de la vista sin recargar la página
+      document.getElementById(`card-${slug}`).remove();
+
+    } catch (e) {
+      alert(`Error al eliminar la noticia: ${e.message}`);
     }
   }
 
