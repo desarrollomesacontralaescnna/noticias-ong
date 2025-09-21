@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>📰 Noticias ONG</title>
+  <link rel="stylesheet" href="https://uicdn.toast.com/editor/latest/toastui-editor.min.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f9f9f9;
+      border-radius: 12px;
+    }
+    h1 {
+      text-align: center;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin: 10px 0 5px;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+    button {
+      background: #0077cc;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #005fa3;
+    }
+    .gallery-preview img {
+      max-height: 80px;
+      margin: 5px;
+      border-radius: 6px;
+    }
+    .noticia {
+      background: white;
+      margin: 10px 0;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .noticia-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .noticia button {
+      background: #d9534f;
+    }
+    .noticia button:hover {
+      background: #b52b27;
+    }
+  </style>
+</head>
+<body>
+  <h1>📰 Noticias ONG</h1>
+
+  <!-- FORMULARIO -->
+  <h2>✍️ Crear nueva noticia</h2>
+  <label for="titulo">Título</label>
+  <input type="text" id="titulo" placeholder="Escribe el título" />
+
+  <label for="fecha">Fecha</label>
+  <input type="date" id="fecha" />
+
+  <label for="galeria">Galería de imágenes</label>
+  <input type="file" id="galeria" multiple accept="image/*" />
+  <div class="gallery-preview" id="galleryPreview"></div>
+
+  <label>Contenido</label>
+  <div id="editor"></div>
+
+  <button onclick="publicarNoticia()">📤 Publicar Noticia</button>
+
+  <hr>
+
+  <!-- LISTADO -->
+  <h2>📚 Noticias publicadas</h2>
+  <div id="listaNoticias"></div>
+
+  <script src="https://uicdn.toast.com/editor/latest/toastui-editor-all.min.js"></script>
+  <script>
+    // Inicializar editor
+    const editor = new toastui.Editor({
+      el: document.querySelector('#editor'),
+      height: '300px',
+      initialEditType: 'wysiwyg',
+      previewStyle: 'vertical'
+    });
+
+    // Galería preview
+    const galeriaInput = document.getElementById("galeria");
+    const galleryPreview = document.getElementById("galleryPreview");
+    let imagenes = [];
+
+    galeriaInput.addEventListener("change", () => {
+      galleryPreview.innerHTML = "";
+      imagenes = [];
+      Array.from(galeriaInput.files).forEach(file => {
+        const url = URL.createObjectURL(file);
+        imagenes.push({ nombre: file.name, url });
+        const img = document.createElement("img");
+        img.src = url;
+        galleryPreview.appendChild(img);
+      });
+    });
+
+    // Subir noticia
+    async function publicarNoticia() {
+      const titulo = document.getElementById("titulo").value.trim();
+      const fecha = document.getElementById("fecha").value || new Date().toISOString().split('T')[0];
+      const markdown = editor.getMarkdown();
+
+      if (!titulo) {
+        alert("Debes poner un título");
+        return;
+      }
+
+      const slug = titulo.toLowerCase().replace(/\\s+/g, "-").replace(/[^\w-]+/g, "");
+      const archivoMD =
+`---
+title: "${titulo}"
+date: "${fecha}"
+images: [${imagenes.map(img => '"' + img.nombre + '"').join(", ")}]
+---
+${markdown}
+`;
+
+      // Aquí deberías hacer el fetch a la API de GitHub con tu token
+      console.log("Subiendo noticia:\n", archivoMD);
+
+      alert("✅ Noticia generada. (Falta conexión a GitHub API)");
+    }
+
+    // Cargar noticias desde el repo
+    async function cargarNoticias() {
+      const contenedor = document.getElementById("listaNoticias");
+      contenedor.innerHTML = "<p>Cargando...</p>";
+
+      // Simulación: deberías traer la lista de archivos con fetch a la API de GitHub
+      const noticias = [
+        { nombre: "ejemplo.md", titulo: "Ejemplo de noticia", fecha: "2025-09-21" }
+      ];
+
+      contenedor.innerHTML = "";
+      noticias.forEach(noticia => {
+        const div = document.createElement("div");
+        div.className = "noticia";
+        div.innerHTML = `
+          <div class="noticia-header">
+            <h3>${noticia.titulo}</h3>
+            <small>${noticia.fecha}</small>
+            <button onclick="eliminarNoticia('${noticia.nombre}')">🗑 Eliminar</button>
+          </div>
+        `;
+        contenedor.appendChild(div);
+      });
+    }
+
+    function eliminarNoticia(nombre) {
+      if (confirm("¿Eliminar " + nombre + "?")) {
+        console.log("Eliminar:", nombre);
+        alert("❌ (Falta conexión a GitHub API)");
+      }
+    }
+
+    cargarNoticias();
+  </script>
+</body>
+</html>
