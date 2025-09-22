@@ -26,20 +26,17 @@
   // CAMBIO: URL del worker para la función de eliminar
   const WORKER_URL = "https://noticias-ong-api.desarrollomesacontralaescnna.workers.dev/delete-file";
 
-    async function load() {
+      async function load() {
     const listEl = document.getElementById('list');
     listEl.innerHTML = '<p>Cargando...</p>';
     
     try {
+      // La solución de caché correcta y compatible con CORS
+      const cacheBuster = '?v=' + new Date().getTime();
+
       // --- PASO 1: Cargar noticias publicadas ---
-      const noticiasResp = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/noticias`, {
-        // CAMBIO: La forma más agresiva de evitar la caché
-        cache: 'reload', 
-        headers: {
-          'Accept': 'application/vnd.github.v3+json',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
-        }
+      const noticiasResp = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/noticias` + cacheBuster, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
       });
       if (!noticiasResp.ok) throw new Error('Error al pedir noticias: ' + noticiasResp.status);
       const noticiasFiles = await noticiasResp.json();
@@ -47,24 +44,42 @@
       // --- PASO 2: Cargar drafts pendientes ---
       let draftsFiles = [];
       try {
-        const draftsResp = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/drafts`, {
-          cache: 'reload', // También aplicamos la solución de caché aquí
-          headers: {
-            'Accept': 'application/vnd.github.v3+json',
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
+        const draftsResp = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/contents/drafts` + cacheBuster, {
+          headers: { 'Accept': 'application/vnd.github.v3+json' }
         });
         if (draftsResp.ok) {
           draftsFiles = await draftsResp.json();
         }
-      } catch(e) { console.warn("No se pudo cargar la carpeta de drafts (puede que no exista):", e); }
+      } catch(e) { console.warn("No se pudo cargar la carpeta de drafts:", e); }
 
       listEl.innerHTML = '';
       
-      // --- PASO 3: Renderizar los drafts pendientes (esta lógica no cambia) ---
+      // --- PASO 3: Renderizar los drafts pendientes ---
       if (draftsFiles.length > 0) {
-        // ... (el código para mostrar drafts se mantiene igual)
+        // ... (el código para mostrar drafts se mantiene igual que en la versión anterior)
+        const draftsHeader = document.createElement('h2');
+        draftsHeader.textContent = 'Pendientes de Publicación ⏳';
+        draftsHeader.style.opacity = '0.7';
+        listEl.appendChild(draftsHeader);
+        for (const f of draftsFiles.sort((a,b) => b.name.localeCompare(a.name))) {
+          if (!f.name.endsWith('.json')) continue;
+          const draftContentResp = await fetch(f.url + cacheBuster); // Cache buster aquí también
+          const draftFileContent = await draftContentResp.json();
+          const draftData = JSON.parse(atob(draftFileContent.content));
+          const slug = f.name.replace('.json','');
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.style.opacity = '0.6';
+          card.id = `card-draft-${slug}`;
+          card.innerHTML = `
+            <div class="card-content">
+              <h3>${draftData.title}</h3>
+              <small>${draftData.date}</small>
+              <p><i>Procesando... La noticia aparecerá publicada en unos minutos.</i></p>
+              <div style="margin-top:8px"><button disabled>✏️ Editar</button><button disabled class="danger">🗑️ Eliminar</button></div>
+            </div>`;
+          listEl.appendChild(card);
+        }
       }
 
       // --- PASO 4: Renderizar las noticias publicadas ---
@@ -78,7 +93,7 @@
         for (const f of noticiasFiles.sort((a,b) => b.name.localeCompare(a.name))) { 
           if (!f.name.endsWith('.md')) continue;
           
-          const raw = await fetch(f.download_url, { cache: 'reload' }).then(r=>r.text());
+          const raw = await fetch(f.download_url + cacheBuster).then(r=>r.text()); // Cache buster aquí
           const match = /^---([\s\S]*?)---/.exec(raw);
           let title = f.name.replace('.md',''), date='', cover_image_url = '', markdown_preview = 'No hay contenido...';
           
@@ -90,13 +105,8 @@
             const firstImage = /gallery:\s*\n\s*-\s*"(.*?)"/.exec(yaml)?.[1];
             if (firstImage) { cover_image_url = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/images/${firstImage}`; }
             
-            // CAMBIO: Limpiar el markdown antes de crear la previsualización
             if (mdContent) {
-              const plainText = mdContent
-                .replace(/!\[.*?\]\(.*?\)/g, '')   // Quitar imágenes
-                .replace(/\[.*?\]\(.*?\)/g, '')    // Quitar enlaces
-                .replace(/#+\s/g, '')              // Quitar cabeceras
-                .replace(/(\*\*|__|\*|_|`)/g, ''); // Quitar negritas, itálicas, etc.
+              const plainText = mdContent.replace(/!\[.*?\]\(.*?\)/g, '').replace(/\[.*?\]\(.*?\)/g, '').replace(/#+\s/g, '').replace(/(\*\*|__|\*|_|`)/g, '');
               markdown_preview = plainText.substring(0, 80).replace(/(\r\n|\n|\r)/gm, " ").trim() + '...';
             }
           }
@@ -125,7 +135,6 @@
       listEl.innerHTML = '<p>No se pudieron cargar noticias. ' + e.message + '</p>';
     }
   }
-  
   // CAMBIO: Nueva función para eliminar noticias
   async function deleteNoticia(slug) {
     if (!confirm(`¿Estás seguro de que quieres eliminar la noticia "${slug}"? Esta acción no se puede deshacer.`)) {
